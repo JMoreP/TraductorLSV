@@ -10,12 +10,22 @@
   },
   "dependencies": {
     "expo": "~54.0.33",
+    "expo-build-properties": "~1.0.10",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "react-native-gesture-handler": "~2.28.0",
+    "react-native-mlkit-pose-detection": "^0.1.8",
+    "react-native-nitro-image": "^0.14.0",
+    "react-native-nitro-modules": "^0.35.6",
+    "react-native-reanimated": "~3.16.1",
+    "react-native-svg": "^15.15.5",
+    "react-native-vision-camera": "^5.0.9",
+    "react-native-worklets-core": "^1.6.3"
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
+    "babel-preset-expo": "^55.0.21",
     "typescript": "~5.9.2"
   },
   "private": true
