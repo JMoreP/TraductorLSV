@@ -3,7 +3,7 @@ import { useFrameOutput, Frame } from 'react-native-vision-camera';
 import { loadTensorflowModel, TfliteModel } from 'react-native-fast-tflite';
 import { useResizer } from 'react-native-vision-camera-resizer';
 import { runOnJS } from 'react-native-reanimated';
-import { Paths, File } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Asset } from 'expo-asset';
 import { HandLandmarks } from '../types';
 
@@ -15,7 +15,24 @@ export const useRealTimeHandTracking = (onLandmarksDetected: (landmarks: HandLan
     async function initModel() {
       try {
         console.log('Loading Tensorflow Lite model...');
-        const loadedModel = await loadTensorflowModel(require('../../assets/hand_landmark.tflite'), []);
+        // Usar expo-asset para obtener la URI (que en desarrollo será http://...)
+        const asset = Asset.fromModule(require('../../assets/hand_landmark.tflite'));
+        await asset.downloadAsync();
+        
+        let modelUri = asset.localUri || asset.uri;
+        console.log('Original model URI:', modelUri);
+        
+        // Si es un enlace HTTP (desarrollo con Metro), lo descargamos al sistema de archivos local
+        if (modelUri.startsWith('http://') || modelUri.startsWith('https://')) {
+          const localPath = `${FileSystem.cacheDirectory}hand_landmark.tflite`;
+          console.log(`Downloading model from Metro to: ${localPath}`);
+          const downloadResult = await FileSystem.downloadAsync(modelUri, localPath);
+          modelUri = downloadResult.uri;
+        }
+
+        console.log('Final local model URI:', modelUri);
+        // Usamos { url: modelUri } para cargar desde el archivo local directamente
+        const loadedModel = await loadTensorflowModel({ url: modelUri }, []);
         setModel(loadedModel);
         setIsLoaded(true);
         console.log('Tensorflow model loaded successfully into JSI state!');
