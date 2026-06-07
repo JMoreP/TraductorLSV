@@ -1,91 +1,43 @@
-import { useState, useEffect } from 'react';
-import { useFrameOutput, Frame } from 'react-native-vision-camera';
-import { loadTensorflowModel, TfliteModel } from 'react-native-fast-tflite';
-import { useResizer } from 'react-native-vision-camera-resizer';
+import { useState } from 'react';
 import { runOnJS } from 'react-native-reanimated';
-import * as FileSystem from 'expo-file-system/legacy';
-import { Asset } from 'expo-asset';
+import { useFrameOutput, Frame } from 'react-native-vision-camera';
+import { detectHandLandmarks } from 'expo-vision-camera-v4-mediapipe';
 import { HandLandmarks } from '../types';
 
 export const useRealTimeHandTracking = (onLandmarksDetected: (landmarks: HandLandmarks | null) => void) => {
-  const [model, setModel] = useState<TfliteModel | undefined>(undefined);
-  const [isLoaded, setIsLoaded] = useState(false);
+  // Con el plugin nativo, el modelo ya está cargado en C++
+  const [isLoaded, setIsLoaded] = useState(true);
 
-  useEffect(() => {
-    async function initModel() {
-      try {
-        console.log('Loading Tensorflow Lite model...');
-        // Usar expo-asset para obtener la URI (que en desarrollo será http://...)
-        const asset = Asset.fromModule(require('../../assets/hand_landmark.tflite'));
-        await asset.downloadAsync();
-        
-        let modelUri = asset.localUri || asset.uri;
-        console.log('Original model URI:', modelUri);
-        
-        // Si es un enlace HTTP (desarrollo con Metro), lo descargamos al sistema de archivos local
-        if (modelUri.startsWith('http://') || modelUri.startsWith('https://')) {
-          const localPath = `${FileSystem.cacheDirectory}hand_landmark.tflite`;
-          console.log(`Downloading model from Metro to: ${localPath}`);
-          const downloadResult = await FileSystem.downloadAsync(modelUri, localPath);
-          modelUri = downloadResult.uri;
-        }
-
-        console.log('Final local model URI:', modelUri);
-        // Usamos { url: modelUri } para cargar desde el archivo local directamente
-        const loadedModel = await loadTensorflowModel({ url: modelUri }, []);
-        setModel(loadedModel);
-        setIsLoaded(true);
-        console.log('Tensorflow model loaded successfully into JSI state!');
-      } catch (err) {
-        console.error('Failed to load Tensorflow Model async:', err);
-      }
+  const onHandsDetectedJS = (result: any) => {
+    if (result && result.hands && result.hands.length > 0) {
+      // Obtenemos los 21 puntos de la primera mano detectada
+      const detectedHand = result.hands[0]; 
+      
+      // Mapeamos al formato exacto que espera nuestra app (0.0 a 1.0)
+      const parsedLandmarks = detectedHand.map((point: any) => ({
+        x: point.x,
+        y: point.y,
+        z: point.z,
+      }));
+      
+      onLandmarksDetected(parsedLandmarks);
+    } else {
+      onLandmarksDetected(null);
     }
-    initModel();
-  }, []);
-  
-  // Inicializar el nuevo Resizer acelerado por GPU (Metal/Vulkan)
-  const { resizer } = useResizer({
-    width: 224,
-    height: 224,
-    channelOrder: 'rgb',
-    dataType: 'uint8',
-    scaleMode: 'cover',
-    pixelLayout: 'interleaved'
-  });
+  };
 
+  // 1. Crear el Frame Output para Vision Camera v5
   const frameOutput = useFrameOutput({
-    pixelFormat: 'rgb',
+    pixelFormat: 'rgb', // MediaPipe suele trabajar bien con rgb
     onFrame: (frame: Frame) => {
       'worklet';
-      
-      if (!model || !resizer) {
-        return;
-      }
-      
       try {
-        // 1. Redimensionar frame a 224x224 (input del modelo) mediante GPU
-        const resized = resizer.resize(frame);
+        // 2. Pasar el frame a MediaPipe (internamente ejecuta detección de palma + landmarks)
+        const result = detectHandLandmarks(frame);
         
-        // Extraer buffer para pasar al modelo
-        const buffer = resized.getPixelBuffer();
-        
-        // 2. Ejecutar modelo en GPU (60 FPS reales)
-        const outputs = model.runSync([buffer as any]);
-        
-        // Limpiar memoria de GPU
-        resized.dispose();
-        
-        if (outputs && outputs.length > 0) {
-          // 3. Convertir salida del tensor a 21 landmarks (x, y, z)
-          const landmarks = parseLandmarksFromTensor(outputs);
-          
-          // 4. Enviar a JS para traducción y dibujo
-          runOnJS(onLandmarksDetected)(landmarks);
-        } else {
-          runOnJS(onLandmarksDetected)(null);
-        }
-      } catch (e) {
-        // Ignore frame errors to keep 60 FPS running smoothly
+        runOnJS(onHandsDetectedJS)(result);
+      } catch (e: any) {
+        console.warn("[HandTracking] Frame Processor Error:", e?.message || e);
       }
     }
   });
@@ -93,25 +45,3 @@ export const useRealTimeHandTracking = (onLandmarksDetected: (landmarks: HandLan
   return { frameOutput, isReady: isLoaded };
 };
 
-// Convertir el tensor de salida a 21 puntos (x, y, z)
-const parseLandmarksFromTensor = (outputs: any[]): HandLandmarks => {
-  'worklet';
-  // La salida del modelo MediaPipe Hands es un tensor de 21x3
-  const landmarkTensor = outputs[0]; // Shape: [21, 3] o tensor flat de 63
-  
-  const landmarks = [];
-  
-  // Dependiendo de cómo TFLite retorne el tensor (flat o anidado)
-  // Usualmente flat array Float32Array para rendimiento
-  if (landmarkTensor && landmarkTensor.length >= 63) {
-    for (let i = 0; i < 21; i++) {
-      landmarks.push({
-        x: landmarkTensor[i * 3] / 224,     // coordenada X (normalizada)
-        y: landmarkTensor[i * 3 + 1] / 224, // coordenada Y (normalizada)
-        z: landmarkTensor[i * 3 + 2] / 224, // coordenada Z (profundidad)
-      });
-    }
-  }
-  
-  return landmarks;
-};

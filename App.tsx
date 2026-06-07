@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { RealTimeCamera } from './src/components/RealTimeCamera';
@@ -13,14 +13,33 @@ export default function App() {
   const [translation, setTranslation] = useState<string>('');
   const [landmarks, setLandmarks] = useState<HandLandmarks | null>(null);
   const [newSignName, setNewSignName] = useState('');
+  const [debugMode, setDebugMode] = useState(false);
+  const [frameCount, setFrameCount] = useState(0);
+  const [detectionCount, setDetectionCount] = useState(0);
+  const frameCountRef = useRef(0);
+  const detectionCountRef = useRef(0);
 
   const handleLandmarks = (lmks: HandLandmarks | null) => {
     // 1. Save landmarks to draw skeleton in UI (React render cycle)
     setLandmarks(lmks);
     
+    // Contador de frames procesados
+    frameCountRef.current += 1;
+    if (frameCountRef.current % 30 === 0) {
+      setFrameCount(frameCountRef.current);
+    }
+    
     // 2. Perform translation each frame
     const text = translate(lmks);
     setTranslation(text);
+    
+    // Contador de detecciones exitosas
+    if (lmks && lmks.length === 21) {
+      detectionCountRef.current += 1;
+      if (detectionCountRef.current % 10 === 0) {
+        setDetectionCount(detectionCountRef.current);
+      }
+    }
   };
 
   return (
@@ -35,6 +54,33 @@ export default function App() {
         />
         {/* Esqueleto SVG en tiempo real (separado de la cámara para que re-renderice suavemente) */}
         <SkeletonOverlay landmarks={landmarks} enableMirror={true} />
+        
+        {/* Debug overlay */}
+        {debugMode && (
+          <View style={styles.debugOverlay}>
+            <Text style={styles.debugText}>Frames: {frameCount}</Text>
+            <Text style={styles.debugText}>Detecciones: {detectionCount}</Text>
+            <Text style={styles.debugText}>
+              Landmarks: {landmarks ? landmarks.length : 'null'}
+            </Text>
+            {landmarks && landmarks.length >= 21 && (
+              <>
+                <Text style={styles.debugText}>
+                  Wrist: ({landmarks[0].x.toFixed(3)}, {landmarks[0].y.toFixed(3)})
+                </Text>
+                <Text style={styles.debugText}>
+                  IndexTip: ({landmarks[8].x.toFixed(3)}, {landmarks[8].y.toFixed(3)})
+                </Text>
+                <Text style={styles.debugText}>
+                  ThumbTip: ({landmarks[4].x.toFixed(3)}, {landmarks[4].y.toFixed(3)})
+                </Text>
+              </>
+            )}
+            <Text style={styles.debugText}>
+              Traducción: {translation || 'ninguna'}
+            </Text>
+          </View>
+        )}
       </View>
       
       {/* Panel inferior UI */}
@@ -46,14 +92,25 @@ export default function App() {
         </View>
         
         <View style={styles.trainingControls}>
-          <TouchableOpacity 
-            style={[styles.modeButton, isTrainingMode && styles.modeButtonActive]}
-            onPress={() => setIsTrainingMode(!isTrainingMode)}
-          >
-            <Text style={styles.modeButtonText}>
-              {isTrainingMode ? '🔴 Modo Entrenamiento' : '⚪ Modo Traducción'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.buttonRow}>
+            <TouchableOpacity 
+              style={[styles.modeButton, isTrainingMode && styles.modeButtonActive]}
+              onPress={() => setIsTrainingMode(!isTrainingMode)}
+            >
+              <Text style={styles.modeButtonText}>
+                {isTrainingMode ? '🔴 Entrenamiento' : '⚪ Traducción'}
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.debugButton, debugMode && styles.debugButtonActive]}
+              onPress={() => setDebugMode(!debugMode)}
+            >
+              <Text style={styles.modeButtonText}>
+                {debugMode ? '🟢 Debug ON' : '🔧 Debug'}
+              </Text>
+            </TouchableOpacity>
+          </View>
           
           {isTrainingMode && (
             <View style={styles.trainingRow}>
@@ -122,14 +179,24 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
   },
   trainingControls: { gap: 12 },
+  buttonRow: { flexDirection: 'row', gap: 10 },
   modeButton: {
+    flex: 1,
     backgroundColor: '#334155',
     padding: 12,
     borderRadius: 12,
     alignItems: 'center',
   },
   modeButtonActive: { backgroundColor: '#10b981' },
-  modeButtonText: { color: 'white', fontWeight: '600' },
+  modeButtonText: { color: 'white', fontWeight: '600', fontSize: 13 },
+  debugButton: {
+    backgroundColor: '#334155',
+    padding: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  debugButtonActive: { backgroundColor: '#f59e0b' },
   trainingRow: { flexDirection: 'row', gap: 10 },
   input: {
     flex: 1,
@@ -154,5 +221,22 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     marginRight: 8,
   },
-  chipText: { color: '#f8fafc', fontSize: 12, fontWeight: 'bold' }
+  chipText: { color: '#f8fafc', fontSize: 12, fontWeight: 'bold' },
+  // Debug overlay
+  debugOverlay: {
+    position: 'absolute',
+    top: 50,
+    left: 10,
+    right: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    borderRadius: 12,
+    padding: 12,
+    zIndex: 100,
+  },
+  debugText: {
+    color: '#10b981',
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    marginBottom: 2,
+  },
 });

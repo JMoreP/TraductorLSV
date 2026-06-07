@@ -6,7 +6,10 @@ export interface HandLandmark {
 
 export type HandLandmarks = HandLandmark[];
 
-export type PredefinedSign = 'A' | 'L' | 'V' | 'W' | 'Y' | 'B' | 'Rock' | null;
+export type PredefinedSign = 
+  | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I' 
+  | 'K' | 'L' | 'O' | 'R' | 'U' | 'V' | 'W' | 'X' | 'Y' 
+  | '5' | null;
 
 export interface PredictionResult {
   label: string | null;
